@@ -15,4 +15,4 @@ const run = (cmd, args, options = {}) =>
   });
 
 await run('node', [path.join(rootDir, 'scripts/build.mjs')], { cwd: rootDir });
-console.log('Packaging is not configured yet. Add an Electron packager (e.g., electron-builder) when ready.');
+await run('pnpm', ['exec', 'electron-builder', '--publish', 'never'], { cwd: rootDir });
