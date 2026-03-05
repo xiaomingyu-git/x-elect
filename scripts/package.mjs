@@ -15,4 +15,13 @@ const run = (cmd, args, options = {}) =>
   });
 
 await run('node', [path.join(rootDir, 'scripts/build.mjs')], { cwd: rootDir });
-await run('pnpm', ['exec', 'electron-builder', '--publish', 'never'], { cwd: rootDir });
+const electronMirror =
+  process.env.ELECTRON_MIRROR ?? 'https://npmmirror.com/mirrors/electron/';
+
+await run('pnpm', ['exec', 'electron-builder', '--publish', 'never'], {
+  cwd: rootDir,
+  env: {
+    ...process.env,
+    ELECTRON_MIRROR: electronMirror
+  }
+});

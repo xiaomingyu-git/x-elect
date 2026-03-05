@@ -16,7 +16,7 @@ pnpm run dev
 ```bash
 pnpm run dev       # 启动 Vite (5173) 并拉起 Electron
 pnpm run build     # 构建 renderer 并拷贝 main/preload 到 dist
-pnpm run package   # 目前仅调用 build，未接入打包器
+pnpm run package   # 触发 electron-builder 打包（默认使用镜像源）
 ```
 
 ## 目录结构
@@ -53,4 +53,20 @@ Preload 暴露在 `window.api`，定义位于 `src/preload/index.cjs`，主进�
 ## 备注
 - 多页面入口配置在 `vite.config.js`：`home` 与 `login`。
 - `dev` 模式会注入 `VITE_DEV_SERVER_URL` 给主进程用于加载页面。
-- 打包器尚未接入（可考虑 electron-builder / electron-forge）。
+- `package` 默认设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，可通过环境变量覆盖。
+
+## 换机器必备条件
+- Node.js >= 20（项目声明 engines）。
+- pnpm >= 9（建议用 corepack：`corepack enable` + `corepack prepare pnpm@9.0.0 --activate`）。
+- 需要网络可下载 Electron（electron-builder 会拉取二进制）。
+
+## 换机器打包步骤
+1. `pnpm install`
+2. `pnpm build`
+3. `pnpm package`
+
+## 常见坑与规避
+- GitHub 下载慢/被墙：用镜像  
+  `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ pnpm package`
+- 如果以后要恢复 dmg：需要先执行 `sudo xcodebuild -license` 同意协议。
+- `description/author` 缺失只是警告，不影响打包。
