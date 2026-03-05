@@ -48,6 +48,8 @@ Preload 暴露在 `window.api`，定义位于 `src/preload/index.cjs`，主进�
 
 本地存储默认落地到 `app.getPath('userData')/store.json`。
 
+更多细节与示例见文档：[`docs/electron-api.md`](docs/electron-api.md)。
+
 ## 备注
 - 多页面入口配置在 `vite.config.js`：`home` 与 `login`。
 - `dev` 模式会注入 `VITE_DEV_SERVER_URL` 给主进程用于加载页面。
