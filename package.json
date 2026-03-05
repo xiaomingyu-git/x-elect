@@ -20,10 +20,28 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",
     "@tailwindcss/vite": "^4.0.0",
+    "electron-builder": "^24.13.3",
     "electron": "^32.0.0",
     "tailwindcss": "^4.0.0",
     "tw-animate-css": "^1.0.0",
     "vite": "^5.0.0"
+  },
+  "build": {
+    "appId": "cn.yujia.lowcode.desktop",
+    "productName": "羽嘉低代码生成",
+    "mac": {
+      "target": [
+        "zip"
+      ]
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "asar": true
   },
   "engines": {
     "node": ">=20"
