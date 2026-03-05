@@ -96,6 +96,8 @@ const LOGIN_PUBLIC_KEY =
   'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCq/tBY/aMASbuVcWmnoBvDUoc2p9tST5vDREeh2sSBydul79UZjxwSldSXyG36ICbmULMqN3Q1gC13ax95QR3DUEGepFJRlfmoxQlwccLOgypmP7HvnoWeTAW/swYWB2aofdve/Ni8bKaD6hyLjg6OOuP06MG76J7644HrbomjBwIDAQAB';
 const encryptor = new JSEncrypt();
 encryptor.setPublicKey(LOGIN_PUBLIC_KEY);
+const LOGIN_STORE_KEY = 'loginFormByDomain';
+const LEGACY_LOGIN_KEY = 'loginForm';
 
 const status = ref('');
 const theme = ref('light');
@@ -108,8 +110,9 @@ const form = ref({
 });
 const captchaSrc = ref('');
 const captchaStatus = ref('');
+const loginByDomain = ref({});
+const lastLoginOrigin = ref('');
 let lastCaptchaObjectUrl = '';
-let saveTimer;
 
 const themeLabel = computed(() => (theme.value === 'light' ? 'Light' : 'Dark'));
 
@@ -266,6 +269,49 @@ const resolveTargetUrl = (targetUrl, baseUrl) => {
   }
 };
 
+const normalizeOrigin = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+};
+
+const applySavedLogin = (origin, fallback) => {
+  if (!origin) return false;
+  const saved = loginByDomain.value[origin];
+  if (saved && typeof saved === 'object') {
+    form.value.username = saved.username || saved.account || '';
+    form.value.password = saved.password || '';
+    return true;
+  }
+  if (fallback && typeof fallback === 'object') {
+    const nextUsername = fallback.username || fallback.account || '';
+    const nextPassword = fallback.password || '';
+    if (nextUsername || nextPassword) {
+      form.value.username = nextUsername;
+      form.value.password = nextPassword;
+      return true;
+    }
+  }
+  return false;
+};
+
+const saveLoginForOrigin = async (origin) => {
+  const normalized = normalizeOrigin(origin);
+  if (!normalized || !window.api?.storeSet) return;
+  const payload = {
+    username: form.value.username,
+    password: form.value.password
+  };
+  loginByDomain.value = { ...loginByDomain.value, [normalized]: payload };
+  try {
+    await window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value);
+  } catch (error) {
+    console.error('[store] save login failed', error);
+  }
+};
+
 const handleLogin = async () => {
   if (
     !form.value.url ||
@@ -322,6 +368,7 @@ const handleLogin = async () => {
     if (token && window.api?.setAuthToken) {
       await window.api.setAuthToken(token);
     }
+    await saveLoginForOrigin(baseUrl);
     const targetUrl = resolveTargetUrl(
       extractTargetUrl(result.data),
       baseUrl
@@ -347,20 +394,50 @@ onMounted(() => {
 
   Promise.all([
     window.api.storeGet('activeServerAddress'),
-    window.api.storeGet('loginForm')
+    window.api.storeGet(LOGIN_STORE_KEY),
+    window.api.storeGet(LEGACY_LOGIN_KEY)
   ])
-    .then(([active, saved]) => {
+    .then(([active, savedMap, legacy]) => {
       const activeValue = typeof active === 'string' ? active.trim() : '';
-      if (saved && typeof saved === 'object') {
-        form.value.url = saved.url || form.value.url;
-        form.value.username = saved.username || saved.account || '';
-        form.value.password = saved.password || '';
-      }
+      const mapValue = savedMap && typeof savedMap === 'object' ? savedMap : {};
+      loginByDomain.value = mapValue;
+      const legacyValue = legacy && typeof legacy === 'object' ? legacy : null;
+      const legacyUrl = legacyValue?.url || '';
+      const legacyOrigin = legacyUrl ? normalizeOrigin(legacyUrl) : '';
       if (activeValue) {
         form.value.url = activeValue;
+      } else if (legacyValue?.url) {
+        form.value.url = legacyValue.url;
       }
       if (!form.value.url) {
         form.value.url = 'https://yj3dev-admin.asiic.cn/';
+      }
+      const origin = normalizeOrigin(form.value.url);
+      if (origin) {
+        lastLoginOrigin.value = origin;
+        const legacyPayload =
+          legacyValue && (!legacyOrigin || legacyOrigin === origin)
+            ? {
+                username: legacyValue.username || legacyValue.account || '',
+                password: legacyValue.password || ''
+              }
+            : null;
+        const applied = applySavedLogin(origin, legacyPayload);
+        if (
+          legacyPayload &&
+          !loginByDomain.value[origin] &&
+          (legacyPayload.username || legacyPayload.password) &&
+          window.api?.storeSet
+        ) {
+          loginByDomain.value = { ...loginByDomain.value, [origin]: legacyPayload };
+          window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value).catch((error) => {
+            console.error('[store] migrate login failed', error);
+          });
+        }
+        if (!applied && !legacyPayload) {
+          form.value.username = '';
+          form.value.password = '';
+        }
       }
     })
     .finally(() => {
@@ -369,25 +446,23 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (saveTimer) clearTimeout(saveTimer);
+  lastLoginOrigin.value = '';
 });
 
-const scheduleSave = () => {
-  if (!window.api?.storeSet) return;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    window.api.storeSet('loginForm', {
-      url: form.value.url,
-      username: form.value.username,
-      password: form.value.password
-    });
-  }, 300);
-};
-
 watch(
-  () => [form.value.url, form.value.username, form.value.password],
-  () => {
-    scheduleSave();
+  () => form.value.url,
+  (nextUrl) => {
+    const origin = normalizeOrigin(nextUrl);
+    if (!origin || origin === lastLoginOrigin.value) return;
+    lastLoginOrigin.value = origin;
+    const saved = loginByDomain.value[origin];
+    if (saved && typeof saved === 'object') {
+      form.value.username = saved.username || saved.account || '';
+      form.value.password = saved.password || '';
+    } else {
+      form.value.username = '';
+      form.value.password = '';
+    }
   }
 );
 </script>

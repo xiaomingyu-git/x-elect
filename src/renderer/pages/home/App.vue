@@ -1,17 +1,7 @@
 <template>
   <main class="page">
-    <header class="header">
-      <div>
-        <p class="eyebrow">Server Flow</p>
-        <h1 class="title">服务器登录</h1>
-        <p class="subtitle">先选择服务器地址，再完成账号登录。</p>
-      </div>
-      <button class="button ghost" type="button" @click="toggleTheme">
-        Theme: {{ themeLabel }}
-      </button>
-    </header>
-
     <section class="card">
+      <h2 class="card-title">羽嘉低代码生成</h2>
       <div class="stepper">
         <div class="step" :class="{ active: step === 1, done: step > 1 }">
           <span class="step-index">1</span>
@@ -104,10 +94,9 @@
 
       <div v-else class="step-panel">
         <form class="form" novalidate @submit.prevent="handleLogin">
-          <div class="field">
-            <span class="label">服务器地址</span>
-            <div class="readonly-field">{{ form.url || '未选择服务器地址' }}</div>
-          </div>
+          <p class="server-hint">
+            服务器地址：{{ form.url || '未选择服务器地址' }}
+          </p>
 
           <label class="field">
             <span class="label">账号</span>
@@ -193,9 +182,10 @@ const LOGIN_PUBLIC_KEY =
   'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCq/tBY/aMASbuVcWmnoBvDUoc2p9tST5vDREeh2sSBydul79UZjxwSldSXyG36ICbmULMqN3Q1gC13ax95QR3DUEGepFJRlfmoxQlwccLOgypmP7HvnoWeTAW/swYWB2aofdve/Ni8bKaD6hyLjg6OOuP06MG76J7644HrbomjBwIDAQAB';
 const encryptor = new JSEncrypt();
 encryptor.setPublicKey(LOGIN_PUBLIC_KEY);
+const LOGIN_STORE_KEY = 'loginFormByDomain';
+const LEGACY_LOGIN_KEY = 'loginForm';
 
 const step = ref(1);
-const theme = ref('light');
 const addressStatus = ref('');
 const loginStatus = ref('');
 const addressInput = ref('');
@@ -211,11 +201,10 @@ const form = ref({
 });
 const captchaSrc = ref('');
 const captchaStatus = ref('');
+const loginByDomain = ref({});
+const lastLoginOrigin = ref('');
 let lastCaptchaObjectUrl = '';
-let saveTimer;
 let captchaTimer;
-
-const themeLabel = computed(() => (theme.value === 'light' ? 'Light' : 'Dark'));
 const canSubmit = computed(() => {
   const value = addressInput.value.trim();
   return Boolean(value);
@@ -226,19 +215,53 @@ const submitLabel = computed(() => {
   return '添加并下一步';
 });
 
-const applyTheme = () => {
-  document.documentElement.classList.toggle('dark', theme.value === 'dark');
-};
-
-const toggleTheme = () => {
-  theme.value = theme.value === 'light' ? 'dark' : 'light';
-  applyTheme();
-};
-
 const normalizeList = (list) =>
   (Array.isArray(list) ? list : [])
     .map((item) => (typeof item === 'string' ? item.trim() : ''))
     .filter(Boolean);
+
+const normalizeOrigin = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+};
+
+const applySavedLogin = (origin, fallback) => {
+  if (!origin) return false;
+  const saved = loginByDomain.value[origin];
+  if (saved && typeof saved === 'object') {
+    form.value.username = saved.username || saved.account || '';
+    form.value.password = saved.password || '';
+    return true;
+  }
+  if (fallback && typeof fallback === 'object') {
+    const nextUsername = fallback.username || fallback.account || '';
+    const nextPassword = fallback.password || '';
+    if (nextUsername || nextPassword) {
+      form.value.username = nextUsername;
+      form.value.password = nextPassword;
+      return true;
+    }
+  }
+  return false;
+};
+
+const saveLoginForOrigin = async (origin) => {
+  const normalized = normalizeOrigin(origin);
+  if (!normalized || !window.api?.storeSet) return;
+  const payload = {
+    username: form.value.username,
+    password: form.value.password
+  };
+  loginByDomain.value = { ...loginByDomain.value, [normalized]: payload };
+  try {
+    await window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value);
+  } catch (error) {
+    console.error('[store] save login failed', error);
+  }
+};
 
 const parseServerAddress = (value) => {
   const raw = typeof value === 'string' ? value.trim() : '';
@@ -324,6 +347,20 @@ const setActiveAddress = async (value) => {
   return true;
 };
 
+const syncLoginByUrl = (value) => {
+  const origin = normalizeOrigin(value);
+  if (!origin || origin === lastLoginOrigin.value) return;
+  lastLoginOrigin.value = origin;
+  const saved = loginByDomain.value[origin];
+  if (saved && typeof saved === 'object') {
+    form.value.username = saved.username || saved.account || '';
+    form.value.password = saved.password || '';
+  } else {
+    form.value.username = '';
+    form.value.password = '';
+  }
+};
+
 const handleAddAndContinue = async () => {
   addressStatus.value = '';
   const parsed = parseServerAddress(addressInput.value);
@@ -352,6 +389,7 @@ const handleAddAndContinue = async () => {
   }
 
   await setActiveAddress(value);
+  syncLoginByUrl(value);
 };
 
 const handleRemove = async (index) => {
@@ -588,6 +626,7 @@ const handleLogin = async () => {
     if (token && window.api?.setAuthToken) {
       await window.api.setAuthToken(token);
     }
+    await saveLoginForOrigin(baseUrl);
     const targetUrl = resolveTargetUrl(extractTargetUrl(result.data), baseUrl);
     if (targetUrl) {
       loginStatus.value = '登录成功，正在跳转...';
@@ -600,17 +639,6 @@ const handleLogin = async () => {
   }
 };
 
-const scheduleSave = () => {
-  if (!window.api?.storeSet) return;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    window.api.storeSet('loginForm', {
-      username: form.value.username,
-      password: form.value.password
-    });
-  }, 300);
-};
-
 const scheduleCaptcha = () => {
   if (captchaTimer) clearTimeout(captchaTimer);
   captchaTimer = setTimeout(() => {
@@ -619,13 +647,6 @@ const scheduleCaptcha = () => {
     }
   }, 400);
 };
-
-watch(
-  () => [form.value.username, form.value.password],
-  () => {
-    scheduleSave();
-  }
-);
 
 watch(
   () => step.value,
@@ -637,7 +658,6 @@ watch(
 );
 
 onMounted(() => {
-  applyTheme();
   if (!window.api?.storeGet) {
     form.value.url = 'https://yj3dev-admin.asiic.cn/';
     return;
@@ -646,21 +666,47 @@ onMounted(() => {
   Promise.all([
     window.api.storeGet('serverAddresses'),
     window.api.storeGet('activeServerAddress'),
-    window.api.storeGet('loginForm')
+    window.api.storeGet(LOGIN_STORE_KEY),
+    window.api.storeGet(LEGACY_LOGIN_KEY)
   ])
-    .then(([savedAddresses, active, savedLogin]) => {
+    .then(([savedAddresses, active, savedMap, legacy]) => {
       addresses.value = normalizeList(savedAddresses);
       const activeValue = typeof active === 'string' ? active.trim() : '';
-      if (savedLogin && typeof savedLogin === 'object') {
-        form.value.username = savedLogin.username || savedLogin.account || '';
-        form.value.password = savedLogin.password || '';
-      }
+      const mapValue = savedMap && typeof savedMap === 'object' ? savedMap : {};
+      loginByDomain.value = mapValue;
+      const legacyValue = legacy && typeof legacy === 'object' ? legacy : null;
       if (activeValue) {
         form.value.url = activeValue;
         addressInput.value = activeValue;
       }
       if (!form.value.url) {
         form.value.url = 'https://yj3dev-admin.asiic.cn/';
+      }
+      const origin = normalizeOrigin(form.value.url);
+      if (origin) {
+        lastLoginOrigin.value = origin;
+        const legacyPayload = legacyValue
+          ? {
+              username: legacyValue.username || legacyValue.account || '',
+              password: legacyValue.password || ''
+            }
+          : null;
+        const applied = applySavedLogin(origin, legacyPayload);
+        if (
+          legacyPayload &&
+          !loginByDomain.value[origin] &&
+          (legacyPayload.username || legacyPayload.password) &&
+          window.api?.storeSet
+        ) {
+          loginByDomain.value = { ...loginByDomain.value, [origin]: legacyPayload };
+          window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value).catch((error) => {
+            console.error('[store] migrate login failed', error);
+          });
+        }
+        if (!applied && !legacyPayload) {
+          form.value.username = '';
+          form.value.password = '';
+        }
       }
     })
     .catch((error) => {
@@ -670,7 +716,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  if (saveTimer) clearTimeout(saveTimer);
   if (captchaTimer) clearTimeout(captchaTimer);
+  lastLoginOrigin.value = '';
 });
 </script>
