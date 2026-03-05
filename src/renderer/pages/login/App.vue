@@ -304,9 +304,10 @@ const saveLoginForOrigin = async (origin) => {
     username: form.value.username,
     password: form.value.password
   };
-  loginByDomain.value = { ...loginByDomain.value, [normalized]: payload };
+  const nextMap = { ...loginByDomain.value, [normalized]: payload };
+  loginByDomain.value = nextMap;
   try {
-    await window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value);
+    await window.api.storeSet(LOGIN_STORE_KEY, nextMap);
   } catch (error) {
     console.error('[store] save login failed', error);
   }
@@ -429,8 +430,9 @@ onMounted(() => {
           (legacyPayload.username || legacyPayload.password) &&
           window.api?.storeSet
         ) {
-          loginByDomain.value = { ...loginByDomain.value, [origin]: legacyPayload };
-          window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value).catch((error) => {
+          const nextMap = { ...loginByDomain.value, [origin]: legacyPayload };
+          loginByDomain.value = nextMap;
+          window.api.storeSet(LOGIN_STORE_KEY, nextMap).catch((error) => {
             console.error('[store] migrate login failed', error);
           });
         }

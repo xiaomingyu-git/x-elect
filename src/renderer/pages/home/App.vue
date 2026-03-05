@@ -21,12 +21,72 @@
       </div>
 
       <div v-if="step === 1" class="step-panel">
-        <form class="form" @submit.prevent="handleAddAndContinue">
-          <label class="field">
-            <span class="label">服务器地址</span>
-            <div class="input-row">
-              <Popover v-model:open="showSaved">
-                <PopoverTrigger as-child>
+        <form class="profile-form" @submit.prevent="handleAddOnly">
+          <Tabs v-model="addressMode" class="profile-card">
+            <TabsList class="profile-tabs" aria-label="服务器地址">
+              <TabsTrigger class="profile-tab" value="select">选择域名</TabsTrigger>
+              <TabsTrigger class="profile-tab" value="new">新增域名</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="select" class="profile-body">
+              <div class="profile-row profile-full">
+                <span class="profile-label">选择域名</span>
+                <div class="profile-control">
+                  <Table v-if="addresses.length">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>#</TableHead>
+                        <TableHead>服务器域名</TableHead>
+                        <TableHead>操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow
+                        v-for="(item, index) in addresses"
+                        :key="`${item}-${index}`"
+                        :data-state="addressInput === item ? 'selected' : undefined"
+                      >
+                        <TableCell>{{ index + 1 }}</TableCell>
+                        <TableCell>
+                          <span class="flex items-center gap-2">
+                            {{ item }}
+                            <CheckIcon
+                              class="h-4 w-4 text-primary"
+                              :class="addressInput === item ? 'opacity-100' : 'opacity-0'"
+                            />
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div class="action-group">
+                            <button
+                              class="button ghost small"
+                              type="button"
+                              @click="selectSaved(item)"
+                            >
+                              选择
+                            </button>
+                            <button
+                              class="button danger small"
+                              type="button"
+                              @click="handleRemoveValue(item)"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                  <div v-else class="empty">暂无保存域名资料</div>
+                  <span class="hint">已保存 {{ addresses.length }} 条地址资料</span>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="new" class="profile-body">
+              <div class="profile-row">
+                <span class="profile-label">服务器域名</span>
+                <div class="profile-control">
                   <input
                     v-model.trim="addressInput"
                     class="input"
@@ -34,57 +94,22 @@
                     placeholder="https://example.com"
                     autocomplete="url"
                     required
-                    @focus="showSaved = true"
-                    @click="showSaved = true"
                   />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  :side-offset="6"
-                  class="min-w-[260px] w-[380px] max-w-[calc(100vw-48px)] p-0"
-                >
-                  <Command>
-                    <CommandInput placeholder="搜索已保存地址..." />
-                    <CommandList>
-                      <CommandEmpty>暂无保存地址</CommandEmpty>
-                      <CommandGroup>
-                        <CommandItem
-                          v-for="(item, index) in addresses"
-                          :key="`${item}-${index}`"
-                          :value="item"
-                          @select="(ev) => selectSaved(ev.detail.value)"
-                        >
-                          <div class="flex w-full items-center gap-2">
-                            <span class="flex-1 truncate">{{ item }}</span>
-                            <CheckIcon
-                              class="h-4 w-4 text-primary"
-                              :class="addressInput === item ? 'opacity-100' : 'opacity-0'"
-                            />
-                            <button
-                              class="text-destructive hover:opacity-80"
-                              type="button"
-                              @click.stop="handleRemoveValue(item)"
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </CommandItem>
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              <button class="button primary" type="submit" :disabled="!canSubmit">
-                {{ submitLabel }}
-              </button>
-            </div>
-            <span class="hint">示例：https://yj3dev-admin.asiic.cn/</span>
-          </label>
-        </form>
+                  <span class="hint">示例：https://yj3dev-admin.asiic.cn/</span>
+                </div>
+              </div>
 
-        <div class="saved-row">
-          <span class="saved-count">已保存 {{ addresses.length }} 条</span>
-        </div>
+              <div class="profile-row profile-actions">
+                <span class="profile-label"></span>
+                <div class="profile-control action-group">
+                  <button class="button primary" type="submit" :disabled="!canSubmit">
+                    新增
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </form>
 
         <div class="log" v-if="addressStatus">
           <span class="log-label">操作日志</span>
@@ -168,15 +193,15 @@
 import JSEncrypt from 'jsencrypt';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { CheckIcon } from 'lucide-vue-next';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList
-} from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/components/ui/table';
 
 const LOGIN_PUBLIC_KEY =
   'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCq/tBY/aMASbuVcWmnoBvDUoc2p9tST5vDREeh2sSBydul79UZjxwSldSXyG36ICbmULMqN3Q1gC13ax95QR3DUEGepFJRlfmoxQlwccLOgypmP7HvnoWeTAW/swYWB2aofdve/Ni8bKaD6hyLjg6OOuP06MG76J7644HrbomjBwIDAQAB';
@@ -190,7 +215,7 @@ const addressStatus = ref('');
 const loginStatus = ref('');
 const addressInput = ref('');
 const addresses = ref([]);
-const showSaved = ref(false);
+const addressMode = ref('select');
 
 const form = ref({
   url: '',
@@ -205,15 +230,7 @@ const loginByDomain = ref({});
 const lastLoginOrigin = ref('');
 let lastCaptchaObjectUrl = '';
 let captchaTimer;
-const canSubmit = computed(() => {
-  const value = addressInput.value.trim();
-  return Boolean(value);
-});
-const submitLabel = computed(() => {
-  const value = addressInput.value.trim();
-  if (value && addresses.value.includes(value)) return '下一步';
-  return '添加并下一步';
-});
+const canSubmit = computed(() => Boolean(addressInput.value.trim()));
 
 const normalizeList = (list) =>
   (Array.isArray(list) ? list : [])
@@ -255,9 +272,10 @@ const saveLoginForOrigin = async (origin) => {
     username: form.value.username,
     password: form.value.password
   };
-  loginByDomain.value = { ...loginByDomain.value, [normalized]: payload };
+  const nextMap = { ...loginByDomain.value, [normalized]: payload };
+  loginByDomain.value = nextMap;
   try {
-    await window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value);
+    await window.api.storeSet(LOGIN_STORE_KEY, nextMap);
   } catch (error) {
     console.error('[store] save login failed', error);
   }
@@ -361,7 +379,7 @@ const syncLoginByUrl = (value) => {
   }
 };
 
-const handleAddAndContinue = async () => {
+const handleAddOnly = async () => {
   addressStatus.value = '';
   const parsed = parseServerAddress(addressInput.value);
   if (!parsed.ok) {
@@ -383,13 +401,12 @@ const handleAddAndContinue = async () => {
     if (!saved) {
       return;
     }
-    addressStatus.value = '已添加，进入下一步。';
+    addressStatus.value = '已新增。';
+    addressInput.value = '';
+    addressMode.value = 'select';
   } else {
-    addressStatus.value = '校验通过，进入下一步。';
+    addressStatus.value = '该域名已存在。';
   }
-
-  await setActiveAddress(value);
-  syncLoginByUrl(value);
 };
 
 const handleRemove = async (index) => {
@@ -407,7 +424,11 @@ const selectSaved = (value) => {
   const nextValue = typeof value === 'string' ? value.trim() : '';
   if (!nextValue) return;
   addressInput.value = nextValue;
-  showSaved.value = false;
+  setActiveAddress(nextValue).then((ok) => {
+    if (ok) {
+      syncLoginByUrl(nextValue);
+    }
+  });
 };
 
 const handleRemoveValue = async (value) => {
@@ -671,6 +692,7 @@ onMounted(() => {
   ])
     .then(([savedAddresses, active, savedMap, legacy]) => {
       addresses.value = normalizeList(savedAddresses);
+      addressMode.value = addresses.value.length ? 'select' : 'new';
       const activeValue = typeof active === 'string' ? active.trim() : '';
       const mapValue = savedMap && typeof savedMap === 'object' ? savedMap : {};
       loginByDomain.value = mapValue;
@@ -698,8 +720,9 @@ onMounted(() => {
           (legacyPayload.username || legacyPayload.password) &&
           window.api?.storeSet
         ) {
-          loginByDomain.value = { ...loginByDomain.value, [origin]: legacyPayload };
-          window.api.storeSet(LOGIN_STORE_KEY, loginByDomain.value).catch((error) => {
+          const nextMap = { ...loginByDomain.value, [origin]: legacyPayload };
+          loginByDomain.value = nextMap;
+          window.api.storeSet(LOGIN_STORE_KEY, nextMap).catch((error) => {
             console.error('[store] migrate login failed', error);
           });
         }
