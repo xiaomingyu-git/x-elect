@@ -19,8 +19,7 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        home: path.join(__dirname, 'src/renderer/pages/home/index.html'),
-        login: path.join(__dirname, 'src/renderer/pages/login/index.html')
+        home: path.join(__dirname, 'src/renderer/pages/home/index.html')
       }
     }
   },
