@@ -2,33 +2,21 @@
   <main class="page">
     <section class="card">
       <h2 class="card-title">羽嘉低代码生成</h2>
-      <div class="stepper">
-        <div class="step" :class="{ active: step === 1, done: step > 1 }">
-          <span class="step-index">1</span>
-          <div>
-            <p class="step-title">服务器地址</p>
-            <p class="step-desc">添加或选择服务器地址</p>
-          </div>
-        </div>
-        <div class="step-line"></div>
-        <div class="step" :class="{ active: step === 2, done: step > 2 }">
-          <span class="step-index">2</span>
-          <div>
-            <p class="step-title">账号登录</p>
-            <p class="step-desc">输入账号、密码与验证码</p>
-          </div>
-        </div>
-      </div>
-
       <div v-if="step === 1" class="step-panel">
         <form class="profile-form" @submit.prevent="handleAddOnly">
           <Tabs v-model="addressMode" class="profile-card">
             <TabsList class="profile-tabs" aria-label="服务器地址">
-              <TabsTrigger class="profile-tab" value="select">选择域名</TabsTrigger>
+              <TabsTrigger
+                v-if="hasAddresses"
+                class="profile-tab"
+                value="select"
+              >
+                选择域名
+              </TabsTrigger>
               <TabsTrigger class="profile-tab" value="new">新增域名</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="select" class="profile-body">
+            <TabsContent v-if="hasAddresses" value="select" class="profile-body">
               <div class="profile-row profile-full">
                 <span class="profile-label">选择域名</span>
                 <div class="profile-control">
@@ -103,7 +91,7 @@
                 <span class="profile-label"></span>
                 <div class="profile-control action-group">
                   <button class="button primary" type="submit" :disabled="!canSubmit">
-                    新增
+                    下一步
                   </button>
                 </div>
               </div>
@@ -178,7 +166,9 @@
 
           <div class="actions">
             <div class="action-row">
-              <button class="button secondary" type="button" @click="step = 1">上一步</button>
+              <button class="button secondary" type="button" @click="handleBackToDomain">
+                上一步
+              </button>
               <button class="button primary" type="submit">登录</button>
             </div>
             <p class="status" v-if="loginStatus">{{ loginStatus }}</p>
@@ -216,6 +206,7 @@ const loginStatus = ref('');
 const addressInput = ref('');
 const addresses = ref([]);
 const addressMode = ref('select');
+const hasAddresses = computed(() => addresses.value.length > 0);
 
 const form = ref({
   url: '',
@@ -379,6 +370,11 @@ const syncLoginByUrl = (value) => {
   }
 };
 
+const handleBackToDomain = () => {
+  step.value = 1;
+  addressMode.value = hasAddresses.value ? 'select' : 'new';
+};
+
 const handleAddOnly = async () => {
   addressStatus.value = '';
   const parsed = parseServerAddress(addressInput.value);
@@ -401,12 +397,13 @@ const handleAddOnly = async () => {
     if (!saved) {
       return;
     }
-    addressStatus.value = '已新增。';
-    addressInput.value = '';
-    addressMode.value = 'select';
+    addressStatus.value = '已新增，进入下一步。';
   } else {
-    addressStatus.value = '该域名已存在。';
+    addressStatus.value = '校验通过，进入下一步。';
   }
+
+  await setActiveAddress(value);
+  syncLoginByUrl(value);
 };
 
 const handleRemove = async (index) => {
@@ -677,6 +674,14 @@ watch(
     }
   }
 );
+
+watch(hasAddresses, (has) => {
+  if (!has) {
+    addressMode.value = 'new';
+  } else if (addressMode.value !== 'select' && addressMode.value !== 'new') {
+    addressMode.value = 'select';
+  }
+});
 
 onMounted(() => {
   if (!window.api?.storeGet) {
